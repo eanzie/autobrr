@@ -231,6 +231,10 @@ func (s *service) webhook(ctx context.Context, action *domain.Action, release do
 
 	defer sharedhttp.DrainAndClose(res)
 
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		return nil, errors.New("webhook returned non-2xx status: %d %s (url: %s)", res.StatusCode, http.StatusText(res.StatusCode), action.WebhookHost)
+	}
+
 	if len(action.WebhookData) > 256 {
 		s.log.Info().Msgf("successfully ran webhook action: '%s' to: %s payload: %s finished in %s", action.Name, action.WebhookHost, action.WebhookData[:256], time.Since(start))
 	} else {

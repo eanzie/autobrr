@@ -41,6 +41,27 @@ func Test_service_webhook(t *testing.T) {
 			wantRejections: nil,
 			wantErr:        false,
 		},
+		{
+			name:           "500_is_push_error",
+			serverStatus:   http.StatusInternalServerError,
+			serverBody:     "boom",
+			wantRejections: nil,
+			wantErr:        true,
+		},
+		{
+			name:           "404_is_push_error",
+			serverStatus:   http.StatusNotFound,
+			serverBody:     "",
+			wantRejections: nil,
+			wantErr:        true,
+		},
+		{
+			name:           "301_is_push_error",
+			serverStatus:   http.StatusMovedPermanently,
+			serverBody:     "",
+			wantRejections: nil,
+			wantErr:        true,
+		},
 	}
 
 	for _, tt := range tests {
