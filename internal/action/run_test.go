@@ -4,6 +4,7 @@
 package action
 
 import (
+	"bytes"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -110,6 +111,43 @@ func Test_service_webhook(t *testing.T) {
 			serverBody:     `{"approved": true, "rejected": true}`,
 			wantRejections: []string{"webhook rejected the release"},
 			wantErr:        false,
+		},
+		{
+			name: "200_oversized_body_truncates_to_success",
+			serverHandler: func(w http.ResponseWriter, r *http.Request) {
+				// Build a body where:
+				//   - Read in full: valid JSON, rejected:true (would return a rejection).
+				//   - Read with the 1 MiB LimitReader cap: truncated mid-string,
+				//     json.Unmarshal fails, falls through to success.
+				// The closing `"}` lands past byte maxWebhookBody, so the cap drops it.
+				prefix := []byte(`{"rejected":true,"pad":"`)
+				suffix := []byte(`"}`)
+				padLen := maxWebhookBody + 100 - len(prefix) - len(suffix)
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(prefix)
+				_, _ = w.Write(bytes.Repeat([]byte{'a'}, padLen))
+				_, _ = w.Write(suffix)
+			},
+			wantRejections: nil,
+			wantErr:        false,
+		},
+		{
+			name: "server_closes_connection_is_push_error",
+			serverHandler: func(w http.ResponseWriter, r *http.Request) {
+				hj, ok := w.(http.Hijacker)
+				if !ok {
+					t.Errorf("ResponseWriter does not support hijacking")
+					return
+				}
+				conn, _, err := hj.Hijack()
+				if err != nil {
+					t.Errorf("hijack failed: %v", err)
+					return
+				}
+				_ = conn.Close()
+			},
+			wantRejections: nil,
+			wantErr:        true,
 		},
 	}
 
