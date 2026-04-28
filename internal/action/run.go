@@ -6,6 +6,7 @@ package action
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,6 +19,17 @@ import (
 	"github.com/autobrr/autobrr/pkg/errors"
 	"github.com/autobrr/autobrr/pkg/sharedhttp"
 )
+
+// Cap webhook response body reads at 1 MiB. Sonarr/Radarr-shaped responses
+// are typically <1 KB; the larger cap accommodates structured payloads
+// from custom endpoints while preventing OOM from a misbehaving server.
+const maxWebhookBody = 1024 * 1024
+
+type webhookProcessResponse struct {
+	Approved   *bool    `json:"approved"`
+	Rejected   *bool    `json:"rejected"`
+	Rejections []string `json:"rejections"`
+}
 
 func (s *service) RunAction(ctx context.Context, action *domain.Action, release *domain.Release) (rejections []string, err error) {
 	defer func() {
@@ -233,6 +245,32 @@ func (s *service) webhook(ctx context.Context, action *domain.Action, release do
 
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
 		return nil, errors.New("webhook returned non-2xx status: %d %s (url: %s)", res.StatusCode, http.StatusText(res.StatusCode), action.WebhookHost)
+	}
+
+	// Read up to maxWebhookBody. If a webhook returns more, the body is
+	// truncated — JSON parse below will fail and the call falls through to
+	// the success path. This mirrors the behavior for non-JSON bodies and
+	// is intentional: an oversized response is treated as opaque success
+	// rather than a hard error.
+	body, err := io.ReadAll(io.LimitReader(res.Body, maxWebhookBody))
+	if err != nil {
+		return nil, errors.Wrap(err, "could not read webhook response body from %s", action.WebhookHost)
+	}
+
+	if len(body) > 0 {
+		var parsed webhookProcessResponse
+		if jsonErr := json.Unmarshal(body, &parsed); jsonErr == nil {
+			rejected := parsed.Rejected != nil && *parsed.Rejected
+			explicitNotApproved := parsed.Approved != nil && !*parsed.Approved
+			if rejected || explicitNotApproved {
+				reasons := parsed.Rejections
+				if len(reasons) == 0 {
+					reasons = []string{"webhook rejected the release"}
+				}
+				s.log.Debug().Msgf("webhook action '%s' to %s rejected release '%s' reasons: %v", action.Name, action.WebhookHost, release.TorrentName, reasons)
+				return reasons, nil
+			}
+		}
 	}
 
 	if len(action.WebhookData) > 256 {

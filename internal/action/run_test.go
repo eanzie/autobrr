@@ -62,6 +62,55 @@ func Test_service_webhook(t *testing.T) {
 			wantRejections: nil,
 			wantErr:        true,
 		},
+		{
+			name:           "200_non_json_body_is_success",
+			serverStatus:   http.StatusOK,
+			serverBody:     "<html><body>thanks</body></html>",
+			wantRejections: nil,
+			wantErr:        false,
+		},
+		{
+			name:           "200_unrelated_json_is_success",
+			serverStatus:   http.StatusOK,
+			serverBody:     `{"id": 42, "ok": true}`,
+			wantRejections: nil,
+			wantErr:        false,
+		},
+		{
+			name:           "200_approved_true_is_success",
+			serverStatus:   http.StatusOK,
+			serverBody:     `{"approved": true}`,
+			wantRejections: nil,
+			wantErr:        false,
+		},
+		{
+			name:           "200_rejected_with_reasons",
+			serverStatus:   http.StatusOK,
+			serverBody:     `{"approved": false, "rejected": true, "rejections": ["Unknown Series", "Already grabbed"]}`,
+			wantRejections: []string{"Unknown Series", "Already grabbed"},
+			wantErr:        false,
+		},
+		{
+			name:           "200_rejected_no_reasons_uses_default",
+			serverStatus:   http.StatusOK,
+			serverBody:     `{"rejected": true}`,
+			wantRejections: []string{"webhook rejected the release"},
+			wantErr:        false,
+		},
+		{
+			name:           "200_approved_false_explicit_uses_default",
+			serverStatus:   http.StatusOK,
+			serverBody:     `{"approved": false}`,
+			wantRejections: []string{"webhook rejected the release"},
+			wantErr:        false,
+		},
+		{
+			name:           "200_approved_and_rejected_both_true_treats_as_rejected",
+			serverStatus:   http.StatusOK,
+			serverBody:     `{"approved": true, "rejected": true}`,
+			wantRejections: []string{"webhook rejected the release"},
+			wantErr:        false,
+		},
 	}
 
 	for _, tt := range tests {
