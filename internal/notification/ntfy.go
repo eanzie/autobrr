@@ -34,7 +34,7 @@ func (s *ntfySender) Name() string {
 	return "ntfy"
 }
 
-func NewNtfySender(log zerolog.Logger, settings *domain.Notification) domain.NotificationSender {
+func NewNtfySender(log zerolog.Logger, settings *domain.Notification) Sender {
 	return &ntfySender{
 		log:      log.With().Str("sender", "ntfy").Str("name", settings.Name).Logger(),
 		Settings: settings,
@@ -64,6 +64,9 @@ func (s *ntfySender) Send(event domain.NotificationEvent, payload domain.Notific
 	if s.Settings.Priority > 0 {
 		req.Header.Set("Priority", strconv.Itoa(int(s.Settings.Priority)))
 	}
+	if s.Settings.Topic != "" {
+		req.Header.Set("Tags", s.Settings.Topic)
+	}
 
 	// set basic auth or access token
 	if s.Settings.Username != "" && s.Settings.Password != "" {
@@ -79,7 +82,7 @@ func (s *ntfySender) Send(event domain.NotificationEvent, payload domain.Notific
 
 	defer sharedhttp.DrainAndClose(res)
 
-	s.log.Trace().Msgf("ntfy response status: %d", res.StatusCode)
+	s.log.Trace().Int("status_code", res.StatusCode).Msg("response status")
 
 	if res.StatusCode != http.StatusOK {
 		// Limit error body reading to prevent memory issues
