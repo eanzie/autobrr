@@ -46,7 +46,7 @@ func (s *Service) RunAction(ctx context.Context, action *domain.Action, release 
 		err = s.runWatchFolder(ctx, action, release)
 
 	case domain.ActionTypeWebhook:
-		err = s.runWebhook(ctx, action)
+		rejections, err = s.runWebhook(ctx, action)
 
 	case domain.ActionTypeDelugeV1, domain.ActionTypeDelugeV2:
 		rejections, err = s.runDeluge(ctx, action, release)
